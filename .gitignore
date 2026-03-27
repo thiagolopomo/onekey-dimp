@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+release_build/
+*.spec
+*.egg-info/
+.env
+*.parquet
+SAIDAS/
+.temp_shards/
+test_*.png
