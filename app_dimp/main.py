@@ -96,64 +96,35 @@ def verificar_atualizacao(shell):
                 appdata.mkdir(parents=True, exist_ok=True)
 
                 install_dir = _Path(r"C:\Program Files\OneKey DIMP")
-                installed_exe = install_dir / "OneKey DIMP.exe"
-
-                # FASE 1: Instalar em pasta temporaria (app continua aberto)
-                temp_install = _Path(tempfile.mkdtemp(prefix="dimp_update_"))
-                progress.setLabelText("Instalando atualização...")
-                progress.setValue(80)
-                progress.show()
-                QApplication.processEvents()
-
-                proc = subprocess.Popen(
-                    [
-                        setup_exe,
-                        "/VERYSILENT",
-                        "/SUPPRESSMSGBOXES",
-                        "/NORESTART",
-                        f"/DIR={temp_install}",
-                    ],
-                    creationflags=0x08000000,
-                )
-
-                # Esperar instalador terminar (app fica aberto com progresso)
-                while proc.poll() is None:
-                    QApplication.processEvents()
-                    import time as _time
-                    _time.sleep(0.3)
-
-                progress.setValue(95)
-                progress.setLabelText("Finalizando...")
-                QApplication.processEvents()
 
                 # Salvar versao nova
                 (appdata / "app_version.json").write_text(
                     _json.dumps({"version": info["version"]}), encoding="utf-8"
                 )
 
-                # FASE 2: Script que copia arquivos e reabre
-                # App fecha -> script copia temp -> install_dir -> abre app
-                bat = appdata / "_update_swap.bat"
-                bat.write_text(f'''@echo off
-taskkill /F /IM "OneKey DIMP.exe" >nul 2>&1
-timeout /t 2 /nobreak >nul
-xcopy /E /Y /Q "{temp_install}\\*" "{install_dir}\\" >nul 2>&1
-rmdir /S /Q "{temp_install}" >nul 2>&1
-start "" "{installed_exe}"
-del "%~f0"
-''', encoding="utf-8")
-
-                progress.setValue(100)
-                progress.setLabelText("Reiniciando...")
+                progress.setLabelText("Preparando instalação...")
+                progress.setValue(90)
                 QApplication.processEvents()
-                import time as _time
-                _time.sleep(0.5)
 
-                subprocess.Popen(
-                    ["cmd", "/c", str(bat)],
-                    creationflags=0x08000000,
+                # Fechar app e rodar installer com elevação admin
+                # O installer sobrescreve Program Files e [Run] reabre o app
+                progress.setLabelText("Reiniciando com a nova versão...")
+                progress.setValue(100)
+                QApplication.processEvents()
+
+                import time as _time
+                _time.sleep(1)
+
+                # Usar ShellExecuteW com "runas" pra elevação admin
+                import ctypes
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas", setup_exe,
+                    f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="{install_dir}"',
+                    None, 0  # SW_HIDE
                 )
 
+                # Dar tempo pro installer iniciar antes de fechar
+                _time.sleep(2)
                 QApplication.quit()
 
             except Exception as e:

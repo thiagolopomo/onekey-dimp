@@ -308,7 +308,7 @@ class MainShell(QMainWindow):
         tb.addStretch()
 
         # Versao badge
-        ver_badge = QLabel("v1.1.1")
+        ver_badge = QLabel("v1.1.2")
         ver_badge.setFont(QFont("Segoe UI", 8, QFont.Normal))
         ver_badge.setStyleSheet("""
             color: rgba(255,255,255,0.5);
@@ -564,7 +564,7 @@ class MainShell(QMainWindow):
         fl = QHBoxLayout(footer)
         fl.setContentsMargins(24, 0, 24, 0)
 
-        ft_left = QLabel("OneKey Payments DIMP v1.1.1")
+        ft_left = QLabel("OneKey Payments DIMP v1.1.2")
         ft_left.setFont(QFont("Segoe UI", 9))
         fl.addWidget(ft_left)
 
