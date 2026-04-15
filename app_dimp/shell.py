@@ -27,7 +27,7 @@ from PySide6.QtGui import (
 
 from resources import carregar_logo, caminho_recurso
 from dimp_worker import DimpWorker
-from dimp_logic import CLIENTES_EXCLUIR, ANO
+from dimp_logic import CLIENTES_EXCLUIR
 from access import log_async
 
 

@@ -13,6 +13,12 @@ try:
 except Exception:
     pass
 
+# Mutex: impedir duas instancias simultaneas
+_mutex = ctypes.windll.kernel32.CreateMutexW(None, True, "OneKeyDIMP_SingleInstance")
+if ctypes.windll.kernel32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+    # Ja tem uma instancia rodando — fechar silenciosamente
+    sys.exit(0)
+
 from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 from PySide6.QtCore import QTimer, Qt
 
@@ -71,6 +77,8 @@ def verificar_atualizacao(shell):
 
             try:
                 import subprocess
+                import shutil
+                import tempfile
                 from pathlib import Path as _Path
                 import json as _json
 
@@ -86,36 +94,64 @@ def verificar_atualizacao(shell):
 
                 appdata = _Path.home() / "AppData" / "Local" / "OneKeyDIMP"
                 appdata.mkdir(parents=True, exist_ok=True)
-                (appdata / "app_version.json").write_text(
-                    _json.dumps({"version": info["version"]}), encoding="utf-8"
-                )
 
                 install_dir = _Path(r"C:\Program Files\OneKey DIMP")
                 installed_exe = install_dir / "OneKey DIMP.exe"
 
-                log_file = appdata / "update_log.txt"
-                bat_path = appdata / "update_and_restart.bat"
-                bat_content = f'''@echo off
-echo [%date% %time%] Update iniciado >> "{log_file}"
-timeout /t 5 /nobreak >nul
-echo Executando instalador: {setup_exe} >> "{log_file}"
-"{setup_exe}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /DIR="{install_dir}"
-echo Instalador finalizado com codigo: %errorlevel% >> "{log_file}"
-timeout /t 3 /nobreak >nul
-if exist "{installed_exe}" (
-    echo Reabrindo app... >> "{log_file}"
-    start "" "{installed_exe}"
-) else (
-    echo EXE NAO ENCONTRADO >> "{log_file}"
-)
+                # FASE 1: Instalar em pasta temporaria (app continua aberto)
+                temp_install = _Path(tempfile.mkdtemp(prefix="dimp_update_"))
+                progress.setLabelText("Instalando atualização...")
+                progress.setValue(80)
+                progress.show()
+                QApplication.processEvents()
+
+                proc = subprocess.Popen(
+                    [
+                        setup_exe,
+                        "/VERYSILENT",
+                        "/SUPPRESSMSGBOXES",
+                        "/NORESTART",
+                        f"/DIR={temp_install}",
+                    ],
+                    creationflags=0x08000000,
+                )
+
+                # Esperar instalador terminar (app fica aberto com progresso)
+                while proc.poll() is None:
+                    QApplication.processEvents()
+                    import time as _time
+                    _time.sleep(0.3)
+
+                progress.setValue(95)
+                progress.setLabelText("Finalizando...")
+                QApplication.processEvents()
+
+                # Salvar versao nova
+                (appdata / "app_version.json").write_text(
+                    _json.dumps({"version": info["version"]}), encoding="utf-8"
+                )
+
+                # FASE 2: Script que copia arquivos e reabre
+                # App fecha -> script copia temp -> install_dir -> abre app
+                bat = appdata / "_update_swap.bat"
+                bat.write_text(f'''@echo off
+taskkill /F /IM "OneKey DIMP.exe" >nul 2>&1
+timeout /t 2 /nobreak >nul
+xcopy /E /Y /Q "{temp_install}\\*" "{install_dir}\\" >nul 2>&1
+rmdir /S /Q "{temp_install}" >nul 2>&1
+start "" "{installed_exe}"
 del "%~f0"
-'''
-                bat_path.write_text(bat_content, encoding="utf-8")
+''', encoding="utf-8")
+
+                progress.setValue(100)
+                progress.setLabelText("Reiniciando...")
+                QApplication.processEvents()
+                import time as _time
+                _time.sleep(0.5)
 
                 subprocess.Popen(
-                    ["cmd", "/c", str(bat_path)],
+                    ["cmd", "/c", str(bat)],
                     creationflags=0x08000000,
-                    close_fds=True
                 )
 
                 QApplication.quit()

@@ -17,7 +17,6 @@ import pandas as pd
 
 CLIENTES_EXCLUIR = ["644", "520", "561", "587", "642", "656"]
 LABEL_EXCLUIDOS = "644, 520, 561, 587, 642, 656"
-ANO = "2025"
 
 
 # ══════════════════════════════════════
@@ -37,48 +36,86 @@ def _parse_valor_expr():
 
 
 def _traduzir_mes_expr():
-    col = pl.col("mes").cast(pl.Utf8).str.to_uppercase().str.strip_chars()
-    return (
-        pl.when(col == "JANEIRO").then(pl.lit("01"))
-        .when(col == "FEVEREIRO").then(pl.lit("02"))
-        .when(col == "MARCO").then(pl.lit("03"))
-        .when(col == "ABRIL").then(pl.lit("04"))
-        .when(col == "MAIO").then(pl.lit("05"))
-        .when(col == "JUNHO").then(pl.lit("06"))
-        .when(col == "JULHO").then(pl.lit("07"))
-        .when(col == "AGOSTO").then(pl.lit("08"))
-        .when(col == "SETEMBRO").then(pl.lit("09"))
-        .when(col == "OUTUBRO").then(pl.lit("10"))
-        .when(col == "NOVEMBRO").then(pl.lit("11"))
-        .when(col == "DEZEMBRO").then(pl.lit("12"))
+    """Extrai mes da coluna 'data' (formato YYYY-MM-DD). Fallback: coluna 'mes' por nome."""
+    data_col = pl.col("data").cast(pl.Utf8).str.strip_chars()
+    # data vem como "2026-03-01" -> extrair posicao 5:7 = "03"
+    mes_from_data = data_col.str.slice(5, 2)
+
+    # Fallback: traduzir coluna "mes" por nome (JANEIRO, etc)
+    mes_col = pl.col("mes").cast(pl.Utf8).str.to_uppercase().str.strip_chars()
+    mes_from_name = (
+        pl.when(mes_col == "JANEIRO").then(pl.lit("01"))
+        .when(mes_col == "FEVEREIRO").then(pl.lit("02"))
+        .when(mes_col == "MARCO").then(pl.lit("03"))
+        .when(mes_col == "ABRIL").then(pl.lit("04"))
+        .when(mes_col == "MAIO").then(pl.lit("05"))
+        .when(mes_col == "JUNHO").then(pl.lit("06"))
+        .when(mes_col == "JULHO").then(pl.lit("07"))
+        .when(mes_col == "AGOSTO").then(pl.lit("08"))
+        .when(mes_col == "SETEMBRO").then(pl.lit("09"))
+        .when(mes_col == "OUTUBRO").then(pl.lit("10"))
+        .when(mes_col == "NOVEMBRO").then(pl.lit("11"))
+        .when(mes_col == "DEZEMBRO").then(pl.lit("12"))
         .otherwise(pl.lit("00"))
     )
 
+    # Usar data se possivel, senao fallback pra nome do mes
+    return pl.when(
+        mes_from_data.is_not_null() & (mes_from_data != "")
+        & mes_from_data.str.contains(r"^\d{2}$")
+    ).then(mes_from_data).otherwise(mes_from_name)
 
-def _transform_columns(df: pl.DataFrame, ano: str) -> pl.DataFrame:
+
+def _extrair_ano_expr():
+    """Extrai ano da coluna 'data' (formato YYYY-MM-DD -> '2026')."""
+    return pl.col("data").cast(pl.Utf8).str.strip_chars().str.slice(0, 4)
+
+
+def _format_valor_2dec(col_name: str):
+    """Formata float -> string BRL com EXATAMENTE 2 casas decimais.
+    21.0 -> '21,00'  |  1055227.75 -> '1055227,75'  |  100.0 -> '100,00'"""
+    col = pl.col(col_name)
+    # Multiplicar por 100, arredondar, dividir: garante 2 decimais
+    inteiro = col.floor().cast(pl.Int64).cast(pl.Utf8)
+    # Parte decimal: (val - floor) * 100, arredondar pra inteiro
+    dec = ((col - col.floor()).abs() * 100).round(0).cast(pl.Int64)
+    dec_str = dec.cast(pl.Utf8).str.zfill(2)
+    return inteiro + pl.lit(",") + dec_str
+
+
+def _transform_columns(df: pl.DataFrame) -> pl.DataFrame:
+    # Extrair ano da coluna data (ex: "2026-03-01" -> "2026")
+    data_col = pl.col("data").cast(pl.Utf8).str.strip_chars()
+    ano_expr = data_col.str.slice(0, 4)
+
     return df.with_columns([
         _parse_valor_expr().alias("valor_float"),
         _traduzir_mes_expr().alias("Mes"),
+        ano_expr.alias("Ano"),
         pl.col("Hora").cast(pl.Utf8).str.replace_all(":", "").str.zfill(6).alias("Hora_AA"),
         pl.col("CNPJ PAR").cast(pl.Utf8).str.strip_chars().str.zfill(14).alias("CNPJ_PAR_fmt"),
-        (pl.lit(ano) + pl.col("Data Inicial").cast(pl.Utf8).str.replace_all("-", "")).alias("Inicio"),
-        (pl.lit(ano) + pl.col("Data Final").cast(pl.Utf8).str.replace_all("-", "")).alias("Final"),
-        pl.col("data").cast(pl.Utf8).str.replace_all("-", "").alias("data_AA"),
+        # Data Inicial/Final: formato "MM-DD" -> precisa prefixar com ano
+        (ano_expr + pl.col("Data Inicial").cast(pl.Utf8).str.replace_all("-", "")).alias("Inicio"),
+        (ano_expr + pl.col("Data Final").cast(pl.Utf8).str.replace_all("-", "")).alias("Final"),
+        # data completa: "2026-03-01" -> "20260301"
+        data_col.str.replace_all("-", "").alias("data_AA"),
     ])
 
 
-def _periodo_nome(meses: list, ano: str) -> str:
-    uniq = sorted(set(m for m in meses if m and m != "00"))
-    if not uniq:
+def _periodo_nome(meses: list, anos: list) -> str:
+    uniq_m = sorted(set(m for m in meses if m and m != "00"))
+    uniq_a = sorted(set(a for a in anos if a and a != ""))
+    ano = uniq_a[0] if uniq_a else "0000"
+    if not uniq_m:
         return f"00.{ano}"
-    return f"{uniq[0]}.{ano}" if len(uniq) == 1 else f"{uniq[0]}-{uniq[-1]}.{ano}"
+    return f"{uniq_m[0]}.{ano}" if len(uniq_m) == 1 else f"{uniq_m[0]}-{uniq_m[-1]}.{ano}"
 
 
 # ══════════════════════════════════════
 # PROCESSAMENTO PRINCIPAL
 # ══════════════════════════════════════
 
-def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
+def processar_dimp(base_path: str, clientes_excluir: list,
                    callback_log=None, callback_progress=None):
     def log(msg):
         if callback_log:
@@ -139,7 +176,7 @@ def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
         if "COD_CLIENTE" in df.columns:
             df = df.filter(pl.col("COD_CLIENTE") != "COD_CLIENTE")
 
-        df = _transform_columns(df, ano)
+        df = _transform_columns(df)
 
         mask = pl.col("COD_CLIENTE").is_in(clientes_excluir)
         df_p = df.filter(~mask)
@@ -189,14 +226,16 @@ def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
         log(f"GERANDO: {tag}")
 
         if not shard_files:
-            _write_empty(out_dir, tag, ano)
+            _write_empty(out_dir, tag)
             log("  (vazio)")
             continue
 
         lf = pl.scan_parquet(shard_files)
 
-        meses = lf.select("Mes").unique().collect()["Mes"].to_list()
-        periodo = _periodo_nome(meses, ano)
+        meta = lf.select(["Mes", "Ano"]).unique().collect()
+        meses = meta["Mes"].to_list()
+        anos = meta["Ano"].to_list()
+        periodo = _periodo_nome(meses, anos)
         base_name = f"DIMP_{tag} - {periodo}"
 
         # 1110: lazy aggregation -> collect (resultado pequeno)
@@ -208,7 +247,7 @@ def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
                 pl.len().alias("qtd"),
             ])
             .with_columns(
-                (pl.col("valor_total").round(2).cast(pl.Utf8).str.replace(r"\.", ",")).alias("valor_brl")
+                _format_valor_2dec("valor_total").alias("valor_brl")
             )
             .with_columns(
                 (pl.lit("|1110|Pix|") +
@@ -228,7 +267,7 @@ def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
             df_1110.group_by(["COD_CLIENTE", "Inicio", "Final"])
             .agg([pl.col("valor_total").sum(), pl.col("qtd").sum()])
             .with_columns(
-                (pl.col("valor_total").round(2).cast(pl.Utf8).str.replace(r"\.", ",")).alias("valor_brl")
+                _format_valor_2dec("valor_total").alias("valor_brl")
             )
             .with_columns(
                 (pl.lit("|1100||") +
@@ -264,7 +303,7 @@ def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
     ]:
         out_dir = out_base / dup_folder
         out_dir.mkdir(parents=True, exist_ok=True)
-        _write_empty(out_dir, dup_tag, ano)
+        _write_empty(out_dir, dup_tag)
         log(f"  {dup_tag}: (vazio)")
 
     # Cleanup
@@ -287,76 +326,89 @@ def processar_dimp(base_path: str, ano: str, clientes_excluir: list,
 # ══════════════════════════════════════
 
 def _write_txt_streaming(lf, df_1100, df_1110, txt_path, log):
-    """Gera TXT interleaved (1100>1110>1115) sem carregar tudo como Python strings.
-    Usa Polars sort + write_csv direto para arquivo."""
+    """Gera TXT interleaved (1100>1110>1115) por cliente.
+    Processa 1 cliente de cada vez — pico RAM minimo."""
 
-    # Blocos 1100 e 1110 (pequenos, ja na memoria)
-    blk_1100 = df_1100.select([
-        pl.col("COD_CLIENTE"),
-        pl.lit("").alias("data_AA"),       # sort antes de qualquer dia
-        pl.lit(0).alias("blk"),            # sort antes de 1110 e 1115
-        pl.lit("").alias("hora_sort"),
-        pl.col("TXT"),
-    ])
+    # Indexar 1100 e 1110 por cliente (pequenos, ja na memoria)
+    map_1100 = {}
+    for row in df_1100.select(["COD_CLIENTE", "TXT"]).iter_rows():
+        map_1100[row[0]] = row[1]
 
-    blk_1110 = df_1110.select([
+    map_1110 = {}
+    for row in df_1110.select(["COD_CLIENTE", "data_AA", "TXT"]).sort(["COD_CLIENTE", "data_AA"]).iter_rows():
+        map_1110.setdefault(row[0], []).append((row[1], row[2]))
+
+    clientes = sorted(map_1100.keys())
+    log(f"    {len(clientes)} clientes")
+
+    # Lazy frame pro 1115 (so colunas necessarias)
+    lf_1115 = lf.select([
         pl.col("COD_CLIENTE"),
         pl.col("data_AA"),
-        pl.lit(1).alias("blk"),
-        pl.lit("").alias("hora_sort"),
-        pl.col("TXT"),
+        pl.col("Hora_AA"),
+        (pl.lit("|1115||") +
+         pl.col("cod_aut").cast(pl.Utf8) + pl.lit("|") +
+         pl.col("id_transac").cast(pl.Utf8) + pl.lit("|0||") +
+         pl.col("Hora_AA") + pl.lit("|") +
+         _format_valor_2dec("valor_float") +
+         pl.lit("|") +
+         pl.col("nat_oper").cast(pl.Utf8) + pl.lit("||1|0|")
+        ).alias("TXT"),
     ])
 
-    # Bloco 1115: lazy scan dos shards (so 5 colunas, nao 20+)
-    blk_1115 = (
-        lf.select([
-            pl.col("COD_CLIENTE"),
-            pl.col("data_AA"),
-            pl.lit(2).alias("blk"),
-            pl.col("Hora_AA").alias("hora_sort"),
-            # Montar TXT inline
-            (pl.lit("|1115||") +
-             pl.col("cod_aut").cast(pl.Utf8) + pl.lit("|") +
-             pl.col("id_transac").cast(pl.Utf8) + pl.lit("|0||") +
-             pl.col("Hora_AA") + pl.lit("|") +
-             (pl.col("valor_float").round(2).cast(pl.Utf8).str.replace(r"\.", ",")) +
-             pl.lit("|") +
-             pl.col("nat_oper").cast(pl.Utf8) + pl.lit("||1|0|")
-            ).alias("TXT"),
-        ])
-        .collect(streaming=True)
-    )
+    total_linhas = 0
 
-    gc.collect()
+    # Processar em lotes de clientes pra reduzir scans do parquet
+    BATCH = 20
+    with open(txt_path, "w", encoding="utf-8") as f:
+        for batch_start in range(0, len(clientes), BATCH):
+            batch_clientes = clientes[batch_start:batch_start + BATCH]
 
-    log(f"    Concatenando blocos...")
-    all_lines = pl.concat([blk_1100, blk_1110, blk_1115], how="vertical_relaxed")
-    del blk_1100, blk_1110, blk_1115
-    gc.collect()
+            # Ler 1115 deste lote de clientes (1 scan do parquet)
+            df_batch = (
+                lf_1115
+                .filter(pl.col("COD_CLIENTE").is_in(batch_clientes))
+                .sort(["COD_CLIENTE", "data_AA", "Hora_AA"])
+                .collect()
+            )
 
-    log(f"    Ordenando {all_lines.height:,} linhas...")
-    all_lines = all_lines.sort(["COD_CLIENTE", "data_AA", "blk", "hora_sort"])
+            # Indexar por (cliente, dia)
+            cli_1115 = {}
+            for row in df_batch.select(["COD_CLIENTE", "data_AA", "TXT"]).iter_rows():
+                cli_1115.setdefault(row[0], {}).setdefault(row[1], []).append(row[2])
+            del df_batch
 
-    log(f"    Escrevendo...")
-    # write_csv de 1 coluna = 1 valor por linha, sem header, sem quotes
-    all_lines.select("TXT").write_csv(
-        txt_path,
-        include_header=False,
-        quote_style="never",
-    )
+            for cliente in batch_clientes:
+                # 1100
+                f.write(map_1100[cliente] + "\n")
+                total_linhas += 1
 
-    log(f"    {all_lines.height:,} linhas")
-    del all_lines
-    gc.collect()
+                # 1110 + 1115 por dia
+                dias = map_1110.get(cliente, [])
+                c_1115 = cli_1115.get(cliente, {})
+                for data_aa, txt_1110 in dias:
+                    f.write(txt_1110 + "\n")
+                    total_linhas += 1
+                    for txt in c_1115.get(data_aa, []):
+                        f.write(txt + "\n")
+                        total_linhas += 1
+
+            del cli_1115
+            gc.collect()
+
+            done = min(batch_start + BATCH, len(clientes))
+            if done % 100 == 0 or done == len(clientes):
+                log(f"    {done}/{len(clientes)} clientes | {total_linhas:,} linhas")
+
+    log(f"    {total_linhas:,} linhas total")
 
 
 # ══════════════════════════════════════
 # HELPERS
 # ══════════════════════════════════════
 
-def _write_empty(out_dir, tag, ano):
-    base_name = f"DIMP_{tag} - 00.{ano}"
-    pl.DataFrame().write_parquet(out_dir / f"{base_name}.parquet")
+def _write_empty(out_dir, tag):
+    base_name = f"DIMP_{tag} - vazio"
     with pd.ExcelWriter(out_dir / f"{base_name}.xlsx", engine="xlsxwriter") as w:
         pd.DataFrame().to_excel(w, index=False, sheet_name="1110")
         pd.DataFrame().to_excel(w, index=False, sheet_name="1100")
@@ -386,7 +438,7 @@ def _write_excel(df_1110, df_1100, path):
     with pd.ExcelWriter(path, engine="xlsxwriter") as writer:
         df_1110_pd.to_excel(writer, index=False, sheet_name="1110")
         df_1100_pd.to_excel(writer, index=False, sheet_name="1100")
-        fmt = writer.book.add_format({"num_format": "#.##0,00"})
+        fmt = writer.book.add_format({"num_format": "#,##0.00"})
         c1 = df_1110_pd.columns.tolist().index("TEXT - valor_bruto")
         c2 = df_1100_pd.columns.tolist().index("GERAL - Valor _ AA")
         writer.sheets["1110"].set_column(c1, c1, 18, fmt)
@@ -403,7 +455,7 @@ def _gerar_guia(out_base):
 3_Clientes_Excluidos_Sem_Duplicatas -> [{LABEL_EXCLUIDOS}]
 4_Clientes_Excluidos_Apenas_Duplicatas -> Auditoria
 
-Formatos: .parquet | .xlsx (1100+1110) | .txt (DIMP)
+Formatos: .xlsx (1100+1110) | .txt (DIMP)
 Blocos: 1100=resumo | 1110=diario | 1115=transacao
 ============================================================
 """, encoding="utf-8")

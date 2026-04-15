@@ -18,7 +18,8 @@ APP_NAME = "OneKey DIMP"
 
 MAIN_MODULES = [
     "main.py", "shell.py", "theme.py", "resources.py", "splash.py",
-    "access.py", "dimp_logic.py", "update_service.py", "update_dialog.py",
+    "access.py", "dimp_logic.py", "dimp_worker.py",
+    "update_service.py", "update_dialog.py",
     "app_version.json",
 ]
 
@@ -27,9 +28,11 @@ ASSETS = ["logo_onekey.png"]
 HIDDEN_IMPORTS = [
     "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets",
     "PySide6.QtSvg", "PySide6.QtSvgWidgets",
-    "polars", "pandas", "openpyxl",
+    "polars", "pandas", "openpyxl", "xlsxwriter",
     "requests", "urllib3", "certifi", "idna", "charset_normalizer",
     "json", "hashlib", "uuid", "getpass", "socket", "platform",
+    "dimp_logic", "dimp_worker", "update_service", "update_dialog",
+    "shell", "theme", "resources", "splash", "access",
 ]
 
 
