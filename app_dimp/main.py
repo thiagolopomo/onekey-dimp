@@ -110,10 +110,11 @@ def verificar_atualizacao(shell):
                 # 1) Espera o app fechar
                 # 2) Roda o installer (com admin via PowerShell Start-Process)
                 # 3) Installer [Run] reabre o app
+                installed_exe = install_dir / "OneKey DIMP.exe"
                 pid = os.getpid()
                 bat = appdata / "_do_update.bat"
                 bat.write_text(f'''@echo off
-echo Aguardando app fechar...
+echo Aguardando app fechar (PID {pid})...
 :wait
 tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
 if %errorlevel%==0 (
@@ -122,7 +123,8 @@ if %errorlevel%==0 (
 )
 echo App fechou. Instalando...
 "{setup_exe}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="{install_dir}"
-echo Instalacao concluida.
+echo Instalacao concluida. Reabrindo app...
+start "" "{installed_exe}"
 del "%~f0"
 ''', encoding="utf-8")
 
@@ -134,14 +136,15 @@ del "%~f0"
                     None, 0  # SW_HIDE
                 )
 
-                progress.setLabelText("Reiniciando...")
+                progress.setLabelText("Aceite a permissão de administrador...")
                 progress.setValue(100)
                 QApplication.processEvents()
 
+                # Esperar usuario aceitar UAC (bat ja esta rodando em background)
                 import time as _time
-                _time.sleep(1)
+                _time.sleep(3)
 
-                # Fechar app — bat detecta e roda installer
+                # Fechar app — bat detecta e roda installer → reabre
                 QApplication.quit()
 
             except Exception as e:
