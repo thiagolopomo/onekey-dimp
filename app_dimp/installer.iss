@@ -1,5 +1,5 @@
 #define MyAppName "OneKey DIMP"
-#define MyAppVersion "1.1.2"
+#define MyAppVersion "1.1.3"
 #define MyAppPublisher "OneKey Payments"
 #define MyAppExeName "OneKey DIMP.exe"
 #define MyAppURL "https://www.onekeypayments.com"
@@ -16,7 +16,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 AppCopyright={#MyAppCopyright}
-VersionInfoVersion=1.1.2.0
+VersionInfoVersion=1.1.3.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Processador DIMP - OneKey Payments
 VersionInfoCopyright={#MyAppCopyright}

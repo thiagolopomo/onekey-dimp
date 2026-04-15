@@ -103,28 +103,45 @@ def verificar_atualizacao(shell):
                 )
 
                 progress.setLabelText("Preparando instalação...")
-                progress.setValue(90)
+                progress.setValue(95)
                 QApplication.processEvents()
 
-                # Fechar app e rodar installer com elevação admin
-                # O installer sobrescreve Program Files e [Run] reabre o app
-                progress.setLabelText("Reiniciando com a nova versão...")
+                # Criar script que:
+                # 1) Espera o app fechar
+                # 2) Roda o installer (com admin via PowerShell Start-Process)
+                # 3) Installer [Run] reabre o app
+                pid = os.getpid()
+                bat = appdata / "_do_update.bat"
+                bat.write_text(f'''@echo off
+echo Aguardando app fechar...
+:wait
+tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+if %errorlevel%==0 (
+    timeout /t 1 /nobreak >nul
+    goto wait
+)
+echo App fechou. Instalando...
+"{setup_exe}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="{install_dir}"
+echo Instalacao concluida.
+del "%~f0"
+''', encoding="utf-8")
+
+                # Rodar bat como admin (pede UAC uma vez)
+                import ctypes
+                ctypes.windll.shell32.ShellExecuteW(
+                    None, "runas",
+                    "cmd.exe", f'/c "{bat}"',
+                    None, 0  # SW_HIDE
+                )
+
+                progress.setLabelText("Reiniciando...")
                 progress.setValue(100)
                 QApplication.processEvents()
 
                 import time as _time
                 _time.sleep(1)
 
-                # Usar ShellExecuteW com "runas" pra elevação admin
-                import ctypes
-                ctypes.windll.shell32.ShellExecuteW(
-                    None, "runas", setup_exe,
-                    f'/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="{install_dir}"',
-                    None, 0  # SW_HIDE
-                )
-
-                # Dar tempo pro installer iniciar antes de fechar
-                _time.sleep(2)
+                # Fechar app — bat detecta e roda installer
                 QApplication.quit()
 
             except Exception as e:
