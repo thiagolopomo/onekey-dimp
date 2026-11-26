@@ -29,7 +29,9 @@ APP_TITLE = "OneKey Payments DIMP"
 CHECK_INTERVAL_MS = 3000
 
 SUPABASE_URL = "https://jhkqfacpobwnirioskii.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impoa3FmYWNwb2J3bmlyaW9za2lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNzU2MDEsImV4cCI6MjA4ODg1MTYwMX0.lnRnP4ESzQc54LxX-6Y-qRZsfPEv1SGg3ozd2R0N4hY"
+# Chave publica (publishable). A legada (JWT "eyJ...") sera desligada pelo Supabase
+# no inicio de 2027. A nova nao e JWT: vai so no header apikey.
+SUPABASE_ANON_KEY = "sb_publishable_QU2JIcrOL6jtXP1OaqnfpQ_BNg9LRDO"
 SUPABASE_TABLE = "solicitacoes_acesso"
 
 CACHE_DIR = Path.home() / "AppData" / "Local" / "OneKeyDIMP"
@@ -81,7 +83,6 @@ def _verificar_aprovacao_local(machine_id):
 def _supabase_headers():
     return {
         "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
         "Content-Type": "application/json",
     }
 

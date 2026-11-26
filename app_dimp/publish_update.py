@@ -168,6 +168,15 @@ def main():
     print(f"\n[1/8] Atualizando versao para {version}...")
     ver_file = BASE_DIR / "app_version.json"
     ver_file.write_text(json.dumps({"version": version}), encoding="utf-8")
+    # Versao que aparece na tela (selo do topo e rodape). Bytes para nao mexer nas quebras de linha.
+    shell_py = BASE_DIR / "shell.py"
+    txt = shell_py.read_bytes().decode("utf-8")
+    novo = re.sub(r'(QLabel\("v)\d+\.\d+\.\d+("\))', rf"\g<1>{version}\g<2>", txt)
+    novo = re.sub(r'(QLabel\("OneKey Payments DIMP v)\d+\.\d+\.\d+("\))', rf"\g<1>{version}\g<2>", novo)
+    if novo.count(f"v{version}") < 2:
+        print("ERRO: nao achei os 2 textos de versao em shell.py")
+        sys.exit(1)
+    shell_py.write_bytes(novo.encode("utf-8"))
 
     # 2. Build
     print(f"\n[2/8] Build (PyInstaller)...")
@@ -219,9 +228,11 @@ def main():
     # 5. Git commit + push
     print(f"\n[5/8] Commit + push...")
     os.chdir(ROOT_DIR)
-    run('git add app_dimp/app_version.json app_dimp/installer.iss')
+    run('git add app_dimp/app_version.json app_dimp/installer.iss app_dimp/shell.py')
     run(f'git commit -m "release: v{version} - {notes}"')
-    run('git push origin main')
+    if not run('git push origin main'):
+        print("PUSH FALHOU! Nada foi publicado ainda (sem release e sem manifest).")
+        sys.exit(1)
 
     # 6. GitHub Release
     print(f"\n[6/8] Criando GitHub Release v{version}...")
@@ -233,11 +244,21 @@ def main():
         f'--notes "{notes}" '
         f'--repo {REPO_OWNER}/{REPO_NAME}'
     )
-    run(release_cmd)
+    if not run(release_cmd):
+        print("RELEASE FALHOU! O manifest NAO foi alterado (os apps continuam na versao anterior).")
+        sys.exit(1)
 
     # 7. Supabase manifest
     print(f"\n[7/8] Atualizando Supabase...")
     download_url = f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{tag}/{zip_name}"
+    # So aponta os apps para o release depois de confirmar que o ZIP baixa
+    import requests
+    with requests.get(download_url, stream=True, allow_redirects=True, timeout=60) as d:
+        tamanho = int(d.headers.get("content-length", 0))
+        if d.status_code != 200 or tamanho != zip_path.stat().st_size:
+            print(f"DOWNLOAD DO RELEASE NAO CONFERE (HTTP {d.status_code}, {tamanho} bytes). Manifest NAO alterado.")
+            sys.exit(1)
+    print(f"  Download do release OK ({tamanho // 1024 // 1024} MB)")
 
     manifest = {
         "version": version,

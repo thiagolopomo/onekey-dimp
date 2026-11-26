@@ -12,7 +12,9 @@ import requests
 from pathlib import Path
 
 SUPABASE_URL = "https://jhkqfacpobwnirioskii.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impoa3FmYWNwb2J3bmlyaW9za2lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNzU2MDEsImV4cCI6MjA4ODg1MTYwMX0.lnRnP4ESzQc54LxX-6Y-qRZsfPEv1SGg3ozd2R0N4hY"
+# Chave publica (publishable), a mesma de access.py. A legada (JWT "eyJ...") sera
+# desligada pelo Supabase no inicio de 2027. A nova nao e JWT: vai so no header apikey.
+SUPABASE_ANON_KEY = "sb_publishable_QU2JIcrOL6jtXP1OaqnfpQ_BNg9LRDO"
 UPDATE_MANIFEST_KEY = "dimp_update_manifest"
 
 
@@ -48,10 +50,7 @@ def get_base_dir():
 def check_for_update(timeout=10):
     """Retorna dict {version, notes, url, sha256, mandatory} ou None."""
     try:
-        headers = {
-            "apikey": SUPABASE_ANON_KEY,
-            "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-        }
+        headers = {"apikey": SUPABASE_ANON_KEY}
         resp = requests.get(
             f"{SUPABASE_URL}/rest/v1/app_config?key=eq.{UPDATE_MANIFEST_KEY}&select=value",
             headers=headers,
