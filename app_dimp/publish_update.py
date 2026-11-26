@@ -68,10 +68,25 @@ def _headers_admin(chave):
     return h
 
 
+def _chave_do_ambiente():
+    """Variavel do processo; se faltar, le a salva com setx (HKCU\\Environment).
+    Programas abertos antes do setx (ex.: o terminal dentro do app do Claude)
+    so enxergam a variavel nova depois de reiniciar."""
+    chave = os.environ.get(ENV_CHAVE_SECRETA, "").strip()
+    if chave or os.name != "nt":
+        return chave
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            return str(winreg.QueryValueEx(k, ENV_CHAVE_SECRETA)[0]).strip()
+    except OSError:
+        return ""
+
+
 def ler_chave_secreta():
     """Le e valida a chave secreta ANTES de buildar/publicar qualquer coisa."""
     import requests
-    chave = os.environ.get(ENV_CHAVE_SECRETA, "").strip()
+    chave = _chave_do_ambiente()
     if not chave:
         print(f"ERRO: variavel de ambiente {ENV_CHAVE_SECRETA} nao definida.")
         print("  Pegue a chave em: Supabase > Project Settings > API Keys > service_role (ou Secret key)")
