@@ -1,5 +1,5 @@
 #define MyAppName "OneKey DIMP"
-#define MyAppVersion "1.1.6"
+#define MyAppVersion "1.1.7"
 #define MyAppPublisher "OneKey Payments"
 #define MyAppExeName "OneKey DIMP.exe"
 #define MyAppURL "https://www.onekeypayments.com"
@@ -16,7 +16,7 @@ AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
 AppCopyright={#MyAppCopyright}
-VersionInfoVersion=1.1.6.0
+VersionInfoVersion=1.1.7.0
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription=Processador DIMP - OneKey Payments
 VersionInfoCopyright={#MyAppCopyright}
@@ -44,6 +44,11 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na Area de Trabalho"; GroupDescription: "Atalhos:"
+
+[InstallDelete]
+; Apagar as bibliotecas da versao anterior antes de copiar as novas. Sem isso
+; sobram pastas antigas (ex.: _internal\pytz) que quebram o import do pandas.
+Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
 Source: "{#BuildOutput}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

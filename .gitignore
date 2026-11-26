@@ -11,3 +11,4 @@ release_build/
 SAIDAS/
 .temp_shards/
 test_*.png
+resend_key.txt

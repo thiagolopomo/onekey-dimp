@@ -35,8 +35,24 @@ SUPABASE_TABLE = "solicitacoes_acesso"
 CACHE_DIR = Path.home() / "AppData" / "Local" / "OneKeyDIMP"
 CACHE_ACESSO = CACHE_DIR / "acesso_aprovado.json"
 
-RESEND_KEY = "re_cw1BHBPG_BhTrRb5n8mTkvQ4qkppPPdE1"
 EMAIL_DESTINO = "thiagolopomo67@gmail.com"
+
+
+def _ler_resend_key():
+    """A chave do Resend fica fora do git: variavel de ambiente RESEND_API_KEY
+    ou arquivo resend_key.txt (copiado para dentro do pacote no build).
+    Sem chave, o log por email e simplesmente desligado."""
+    chave = os.environ.get("RESEND_API_KEY", "").strip()
+    if chave:
+        return chave
+    try:
+        with open(caminho_recurso("resend_key.txt"), encoding="utf-8-sig") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+RESEND_KEY = _ler_resend_key()
 
 
 def _salvar_aprovacao(machine_id):
@@ -74,6 +90,11 @@ def gerar_machine_id():
     usuario = getpass.getuser()
     maquina = socket.gethostname()
     sistema = platform.platform()
+    # Ate a v1.1.4 (Python 3.10) o Windows 11 aparecia como "Windows-10-...".
+    # Python 3.12+ devolve "Windows-11-...": manter o formato antigo para o ID
+    # da maquina nao mudar e o acesso ja aprovado continuar valendo.
+    if sistema.startswith("Windows-11-"):
+        sistema = "Windows-10-" + sistema[len("Windows-11-"):]
     base = f"{usuario}|{maquina}|{sistema}|{APP_TITLE}"
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
@@ -140,6 +161,8 @@ def log_async(acao, detalhes=None):
 
 
 def _enviar_email_log(usuario, maquina, machine_id, acao, detalhes):
+    if not RESEND_KEY:
+        return
     agora = time.strftime("%d/%m/%Y %H:%M:%S")
     acao_map = {
         "app_aberto": "abriu o aplicativo",

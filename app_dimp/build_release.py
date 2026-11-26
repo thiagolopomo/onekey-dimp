@@ -102,6 +102,15 @@ def main():
     data_files = f'--add-data "{STAGE_DIR / "app_version.json"};."'
     data_files += f' --add-data "{STAGE_DIR / "logo_onekey.png"};."'
 
+    # Chave do Resend (log por email): arquivo local, fora do git
+    resend_src = BASE_DIR / "resend_key.txt"
+    if resend_src.exists():
+        shutil.copy2(resend_src, STAGE_DIR / "resend_key.txt")
+        data_files += f' --add-data "{STAGE_DIR / "resend_key.txt"};."'
+        print("  resend_key.txt incluido")
+    else:
+        print("  AVISO: sem resend_key.txt -> log por email desligado neste build")
+
     if fonts_dst.exists():
         data_files += f' --add-data "{fonts_dst};assets/fonts"'
 
