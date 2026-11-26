@@ -39,7 +39,77 @@ INNO = next(
 )
 
 SUPABASE_URL = "https://jhkqfacpobwnirioskii.supabase.co"
-SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impoa3FmYWNwb2J3bmlyaW9za2lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNzU2MDEsImV4cCI6MjA4ODg1MTYwMX0.lnRnP4ESzQc54LxX-6Y-qRZsfPEv1SGg3ozd2R0N4hY"
+MANIFEST_KEY = "dimp_update_manifest"
+# A chave publica (anon) nao grava mais em app_config (supabase/01_protege_manifest_e_acessos.sql).
+# Publicar exige a chave secreta, que fica so na variavel de ambiente, nunca no codigo.
+ENV_CHAVE_SECRETA = "SUPABASE_SERVICE_ROLE_KEY"
+
+
+def _papel_da_chave(chave):
+    """'service_role', 'anon' ou '' (desconhecido)."""
+    if chave.startswith("sb_secret_"):
+        return "service_role"
+    if chave.startswith("sb_publishable_"):
+        return "anon"
+    try:
+        import base64
+        payload = chave.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return json.loads(base64.urlsafe_b64decode(payload)).get("role", "")
+    except Exception:
+        return ""
+
+
+def _headers_admin(chave):
+    # Chave nova (sb_secret_...) vai so no header apikey; a legada (JWT) vai nos dois
+    h = {"apikey": chave, "Content-Type": "application/json"}
+    if not chave.startswith("sb_"):
+        h["Authorization"] = f"Bearer {chave}"
+    return h
+
+
+def ler_chave_secreta():
+    """Le e valida a chave secreta ANTES de buildar/publicar qualquer coisa."""
+    import requests
+    chave = os.environ.get(ENV_CHAVE_SECRETA, "").strip()
+    if not chave:
+        print(f"ERRO: variavel de ambiente {ENV_CHAVE_SECRETA} nao definida.")
+        print("  Pegue a chave em: Supabase > Project Settings > API Keys > service_role (ou Secret key)")
+        print(f'  Rode uma vez:  setx {ENV_CHAVE_SECRETA} "<chave>"   e abra um terminal novo.')
+        sys.exit(1)
+    if _papel_da_chave(chave) != "service_role":
+        print(f"ERRO: {ENV_CHAVE_SECRETA} nao e a chave secreta (service_role). Nao use a chave anon/publica.")
+        sys.exit(1)
+    r = requests.get(f"{SUPABASE_URL}/rest/v1/app_config?key=eq.{MANIFEST_KEY}&select=key",
+                     headers=_headers_admin(chave), timeout=20)
+    if r.status_code != 200:
+        print(f"ERRO: a chave secreta foi recusada pelo Supabase (HTTP {r.status_code}): {r.text[:200]}")
+        sys.exit(1)
+    return chave
+
+
+def gravar_manifest(manifest, chave):
+    """Grava o manifest de update e confere lendo de volta."""
+    import requests
+    h = _headers_admin(chave)
+    r = requests.post(
+        f"{SUPABASE_URL}/rest/v1/app_config",
+        headers={**h, "Prefer": "resolution=merge-duplicates,return=representation"},
+        json={"key": MANIFEST_KEY, "value": json.dumps(manifest)},
+        timeout=20,
+    )
+    if r.status_code >= 300:
+        print(f"  ERRO Supabase HTTP {r.status_code}: {r.text[:300]}")
+        return False
+    g = requests.get(f"{SUPABASE_URL}/rest/v1/app_config?key=eq.{MANIFEST_KEY}&select=value",
+                     headers=h, timeout=20)
+    rows = g.json() if g.ok else []
+    lido = json.loads(rows[0]["value"]) if rows else None
+    if lido != manifest:
+        print(f"  ERRO: manifest lido de volta nao confere: {lido}")
+        return False
+    print(f"  Supabase: manifest v{manifest['version']} gravado e conferido")
+    return True
 
 
 def run(cmd, check=True):
@@ -75,6 +145,9 @@ def main():
     print("=" * 60)
     print(f"  PUBLISH UPDATE - OneKey DIMP v{version}")
     print("=" * 60)
+
+    # Checa a chave secreta antes de tudo: sem ela o manifest nao pode ser gravado
+    chave_secreta = ler_chave_secreta()
 
     # 1. Versao
     print(f"\n[1/8] Atualizando versao para {version}...")
@@ -159,20 +232,9 @@ def main():
         "sha256": zip_sha,
     }
 
-    import requests as req
-    sb_headers = {
-        "apikey": SUPABASE_ANON_KEY,
-        "Authorization": f"Bearer {SUPABASE_ANON_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=representation",
-    }
-    r = req.post(
-        f"{SUPABASE_URL}/rest/v1/app_config",
-        headers=sb_headers,
-        json={"key": "dimp_update_manifest", "value": json.dumps(manifest)},
-        timeout=10,
-    )
-    print(f"  Supabase: {r.status_code}")
+    if not gravar_manifest(manifest, chave_secreta):
+        print("MANIFEST NAO FOI ATUALIZADO! O release existe, mas os apps nao vao ver o update.")
+        sys.exit(1)
 
     manifest_path = ROOT_DIR / "version.json"
     manifest_path.write_text(json.dumps(manifest, indent=4, ensure_ascii=False), encoding="utf-8")
