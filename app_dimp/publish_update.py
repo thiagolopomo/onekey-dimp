@@ -30,7 +30,13 @@ REPO_OWNER = "thiagolopomo"
 REPO_NAME = "onekey-dimp"
 BASE_DIR = Path(__file__).parent
 ROOT_DIR = BASE_DIR.parent
-INNO = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+INNO = next(
+    (p for p in (
+        r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"),
+    ) if os.path.exists(p)),
+    r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+)
 
 SUPABASE_URL = "https://jhkqfacpobwnirioskii.supabase.co"
 SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impoa3FmYWNwb2J3bmlyaW9za2lpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyNzU2MDEsImV4cCI6MjA4ODg1MTYwMX0.lnRnP4ESzQc54LxX-6Y-qRZsfPEv1SGg3ozd2R0N4hY"
@@ -91,8 +97,21 @@ def main():
         f'#define MyAppVersion "{version}"',
         iss_content
     )
+    iss_content = re.sub(
+        r'VersionInfoVersion=[\d.]+',
+        f'VersionInfoVersion={version}.0',
+        iss_content
+    )
     iss_path.write_text(iss_content, encoding="utf-8")
-    run(f'"{INNO}" "{iss_path}"')
+    if not run(f'"{INNO}" "{iss_path}"'):
+        print("INSTALADOR FALHOU!")
+        sys.exit(1)
+
+    # Assinar o instalador (sem assinatura o Smart App Control bloqueia o update)
+    from build_release import assinar
+    if not assinar(BASE_DIR / "release_build" / "installer" / f"OneKeyDIMP_Setup_v{version}.exe"):
+        print("ASSINATURA DO INSTALADOR FALHOU!")
+        sys.exit(1)
 
     # 4. ZIP
     print(f"\n[4/8] Criando ZIP...")

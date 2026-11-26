@@ -36,6 +36,33 @@ HIDDEN_IMPORTS = [
 ]
 
 
+SIGN_SUBJECT = "CN=OneKey Payments, O=OneKey Payments, C=BR"
+TIMESTAMP_URL = "http://timestamp.digicert.com"
+
+
+def assinar(path):
+    """Assina o arquivo com o certificado de codigo 'OneKey Payments' do usuario
+    (Cert:\\CurrentUser\\My). Sem assinatura o Smart App Control bloqueia o exe."""
+    ps = (
+        "$c = Get-ChildItem Cert:\\CurrentUser\\My -CodeSigningCert | "
+        f"Where-Object {{ $_.Subject -eq '{SIGN_SUBJECT}' -and $_.NotAfter -gt (Get-Date) }} | "
+        "Sort-Object NotAfter -Descending | Select-Object -First 1; "
+        "if (-not $c) { Write-Output 'SEM_CERT'; exit 2 }; "
+        f"$r = Set-AuthenticodeSignature -FilePath '{path}' -Certificate $c "
+        f"-HashAlgorithm SHA256 -TimestampServer '{TIMESTAMP_URL}'; "
+        "Write-Output ($r.Status.ToString() + '|' + $r.SignerCertificate.Thumbprint); "
+        "if (-not $r.SignerCertificate -or -not $r.TimeStamperCertificate) { exit 1 }"
+    )
+    r = subprocess.run(["powershell", "-NoProfile", "-Command", ps],
+                       capture_output=True, text=True)
+    out = r.stdout.strip()
+    if r.returncode != 0:
+        print(f"  assinatura falhou ({Path(path).name}): {out} {r.stderr[-300:]}")
+        return False
+    print(f"  assinado: {Path(path).name} [{out}]")
+    return True
+
+
 def main():
     print("=" * 50)
     print(f"  BUILD: {APP_NAME}")
@@ -108,6 +135,11 @@ def main():
     ver_src = STAGE_DIR / "app_version.json"
     if ver_src.exists():
         shutil.copy2(ver_src, app_dir / "app_version.json")
+
+    # Exe sem assinatura e bloqueado pelo Smart App Control do Windows
+    if not assinar(app_dir / f"{APP_NAME}.exe"):
+        print("  ERRO: nao foi possivel assinar o exe")
+        sys.exit(1)
 
     print(f"\n  BUILD COMPLETO: {app_dir}")
     print(f"  Arquivos: {sum(1 for _ in app_dir.rglob('*') if _.is_file())}")
