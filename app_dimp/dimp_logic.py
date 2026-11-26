@@ -83,6 +83,17 @@ def _format_valor_2dec(col_name: str):
     return inteiro + pl.lit(",") + dec_str
 
 
+def _txt(col_name: str):
+    """Coluna como texto pra montar linha do TXT. Campo vazio no CSV vira null no
+    polars, e null + texto = null (a linha inteira some). Aqui vira '' (campo em branco)."""
+    return pl.col(col_name).cast(pl.Utf8).fill_null("")
+
+
+# Colunas do CSV que entram nas linhas do TXT (pra avisar quando vierem vazias)
+COLUNAS_TXT = ["COD_CLIENTE", "CNPJ PAR", "cod_aut", "id_transac", "nat_oper",
+               "Hora", "data", "Data Inicial", "Data Final"]
+
+
 def _transform_columns(df: pl.DataFrame) -> pl.DataFrame:
     # Extrair ano da coluna data (ex: "2026-03-01" -> "2026")
     data_col = pl.col("data").cast(pl.Utf8).str.strip_chars()
@@ -151,6 +162,7 @@ def processar_dimp(base_path: str, clientes_excluir: list,
     cols_ref = None
     soma_princ = 0.0
     soma_excl = 0.0
+    vazios = {}
 
     for i, file in enumerate(found):
         log(f"  [{i+1}/{len(found)}] {Path(file).name}")
@@ -175,6 +187,13 @@ def processar_dimp(base_path: str, clientes_excluir: list,
 
         if "COD_CLIENTE" in df.columns:
             df = df.filter(pl.col("COD_CLIENTE") != "COD_CLIENTE")
+
+        # Contar campos vazios nas colunas que entram no TXT (so pra avisar no log)
+        for c in COLUNAS_TXT:
+            if c in df.columns:
+                n = df[c].null_count()
+                if n:
+                    vazios[c] = vazios.get(c, 0) + n
 
         df = _transform_columns(df)
 
@@ -204,6 +223,11 @@ def processar_dimp(base_path: str, clientes_excluir: list,
     log(f"  EXCLUINDO: {soma_princ:,.2f}")
     log(f"  SOMENTE:   {soma_excl:,.2f}")
     log(f"  CONSISTENCIA OK")
+
+    if vazios:
+        log("\nAVISO: campos vazios no CSV (saem em branco no TXT):")
+        for c, n in vazios.items():
+            log(f"  {c}: {n:,} linha(s)")
     progress(35)
 
     # ═══════════════════════════════════════════════
@@ -251,10 +275,10 @@ def processar_dimp(base_path: str, clientes_excluir: list,
             )
             .with_columns(
                 (pl.lit("|1110|Pix|") +
-                 pl.col("data_AA") + pl.lit("|") +
-                 pl.col("valor_brl") + pl.lit("|") +
-                 pl.col("qtd").cast(pl.Utf8) + pl.lit("|") +
-                 pl.col("CNPJ_PAR_fmt") + pl.lit("|")
+                 _txt("data_AA") + pl.lit("|") +
+                 _txt("valor_brl") + pl.lit("|") +
+                 _txt("qtd") + pl.lit("|") +
+                 _txt("CNPJ_PAR_fmt") + pl.lit("|")
                 ).alias("TXT")
             )
             .collect()
@@ -271,11 +295,11 @@ def processar_dimp(base_path: str, clientes_excluir: list,
             )
             .with_columns(
                 (pl.lit("|1100||") +
-                 pl.col("COD_CLIENTE").cast(pl.Utf8) + pl.lit("|0|0|") +
-                 pl.col("Inicio") + pl.lit("|") +
-                 pl.col("Final") + pl.lit("|") +
-                 pl.col("valor_brl") + pl.lit("|") +
-                 pl.col("qtd").cast(pl.Utf8) + pl.lit("|")
+                 _txt("COD_CLIENTE") + pl.lit("|0|0|") +
+                 _txt("Inicio") + pl.lit("|") +
+                 _txt("Final") + pl.lit("|") +
+                 _txt("valor_brl") + pl.lit("|") +
+                 _txt("qtd") + pl.lit("|")
                 ).alias("TXT")
             )
         )
@@ -347,12 +371,12 @@ def _write_txt_streaming(lf, df_1100, df_1110, txt_path, log):
         pl.col("data_AA"),
         pl.col("Hora_AA"),
         (pl.lit("|1115||") +
-         pl.col("cod_aut").cast(pl.Utf8) + pl.lit("|") +
-         pl.col("id_transac").cast(pl.Utf8) + pl.lit("|0||") +
-         pl.col("Hora_AA") + pl.lit("|") +
-         _format_valor_2dec("valor_float") +
+         _txt("cod_aut") + pl.lit("|") +
+         _txt("id_transac") + pl.lit("|0||") +
+         _txt("Hora_AA") + pl.lit("|") +
+         _format_valor_2dec("valor_float").fill_null("") +
          pl.lit("|") +
-         pl.col("nat_oper").cast(pl.Utf8) + pl.lit("||1|0|")
+         _txt("nat_oper") + pl.lit("||1|0|")
         ).alias("TXT"),
     ])
 
