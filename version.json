@@ -1,7 +1,7 @@
 {
-    "version": "1.1.5",
-    "notes": "Corrige o erro ao gerar o TXT quando o CSV tem campos vazios (cod_aut / id_transac).",
+    "version": "1.1.6",
+    "notes": "Corrige o erro ao gerar o TXT quando o CSV tem campos vazios (cod_aut / id_transac). Instalador e programa assinados.",
     "mandatory": false,
-    "url": "https://github.com/thiagolopomo/onekey-dimp/releases/download/v1.1.5/OneKeyDIMP_v1.1.5.zip",
-    "sha256": "98b193800781636e9e0904742ef2e578580649e0a3f88afc76d0fbbd0fa4ca1c"
+    "url": "https://github.com/thiagolopomo/onekey-dimp/releases/download/v1.1.6/OneKeyDIMP_v1.1.6.zip",
+    "sha256": "950677833c0976dada26d3a55dcdf98dd77341b132803ec1691c01b4d6b65edb"
 }
